@@ -1,0 +1,95 @@
+# فایل اصلی ربات دانلودر آبی دل
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import requests
+import os
+
+# توکن ربات از محیط امن ریپلیت
+TELEGRAM_TOKEN = os.getenv("8405364928:AAG1AeznfzqWU2an0umqKoehe1v2woe8G4s")
+ADMIN_ID = os.getenv("https://t.me/esher2")
+
+# لیست پیج‌هایی که باید فالو بشن
+REQUIRED_FOLLOW_LINKS = [
+    {"title": "پیج آبی دل 💙", "url": "https://www.instagram.com/abi_deell/"},
+    {"title": "اشعار داوود محمدکیا ✍️", "url": "https://www.instagram.com/esher.official/"}
+]
+
+# تابع شروع - نمایش منوی اصلی
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📥 دانلود کلیپ از اینستاگرام", callback_data="download")],
+        [InlineKeyboardButton("📣 جذب تبلیغات", callback_data="ads")],
+    ]
+    for page in REQUIRED_FOLLOW_LINKS:
+        keyboard.append([InlineKeyboardButton(f"✅ فالو کن: {page['title']}", url=page['url'])])
+    await update.message.reply_text(
+        "👋 به ربات دانلودر اینستاگرام آبی دل خوش آمدید!\n\n"
+        "📌 ابتدا یک لینک پست، ریلز یا استوری اینستاگرام بفرستید تا برای بار اول بدون شرط دانلود کنید.\n"
+        "📌 از دانلود دوم به بعد، باید پیج‌های ما را فالو کنید.\n\n"
+        "📍 از منو گزینه دلخواه را انتخاب کنید:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# دکمه‌ها
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "download":
+        await query.message.reply_text("لطفاً لینک پست یا ریلز اینستاگرام را ارسال کنید:")
+        context.user_data["awaiting_link"] = True
+
+    elif query.data == "ads":
+        await query.message.reply_text(
+            "🎯 به بخش تبلیغات خوش آمدید!\n\n"
+            "تبلیغ ما برای پیج های بالای 20 هزار فالور اینطوری است که اگر ربات ما را پست کنید، پیج شما را در ربات می‌گذاریم و فالورها برای دانلود، مجبور به فالو شما خواهند شد و اما اگر تبلیغات پولی میخواهید با آیدی تلگرامی @eshr2 پیام بگذارید تا مذاکره کنیم .\n"
+            "جهت هماهنگی، با ادمین تماس بگیرید: esher2@"
+        )
+
+# دریافت لینک و دانلود
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_link"):
+        context.user_data["awaiting_link"] = False
+        url = update.message.text
+
+        # بررسی اینکه این کاربر اولین بار دانلود می‌کنه یا نه
+        user_id = update.effective_user.id
+        downloads = context.bot_data.get("downloads", {})
+        user_downloads = downloads.get(user_id, 0)
+
+        if user_downloads >= 1:
+            links = "\n".join([f"🔗 {p['title']}: {p['url']}" for p in REQUIRED_FOLLOW_LINKS])
+            await update.message.reply_text(
+                f"⚠️ برای ادامه دانلود، لطفاً ابتدا این پیج‌ها را فالو کنید:\n{links}"
+            )
+            return
+
+        try:
+            await update.message.reply_text("⏳ در حال دریافت...")
+            api = f"https://api.igdownloader.app/api/v1/download?url={url}"
+            res = requests.get(api)
+            data = res.json()
+
+            if data.get("success"):
+                for media in data["media"]:
+                    file_url = media.get("url")
+                    caption = media.get("title", "") + "\n" + media.get("hashtags", "")
+                    if file_url.endswith(".mp4"):
+                        await update.message.reply_video(file_url, caption=caption[:1024])
+                    else:
+                        await update.message.reply_photo(file_url, caption=caption[:1024])
+
+                downloads[user_id] = user_downloads + 1
+                context.bot_data["downloads"] = downloads
+            else:
+                await update.message.reply_text("⚠️ مشکلی در دریافت اطلاعات پیش آمد.")
+        except:
+            await update.message.reply_text("❌ خطا در دریافت اطلاعات. لطفاً بعداً تلاش کنید.")
+
+# اجرای ربات
+if __name__ == '__main__':
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.run_polling()
